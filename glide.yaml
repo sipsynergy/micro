@@ -1,0 +1,58 @@
+package: github.com/micro/micro
+import:
+- package: github.com/Jeffail/gabs
+  version: ^1.1.0
+- package: github.com/golang/protobuf
+  version: ^1.1.0
+  subpackages:
+  - proto
+- package: github.com/gorilla/handlers
+  version: ^1.3.0
+- package: github.com/gorilla/mux
+  version: ^1.6.2
+- package: github.com/gorilla/websocket
+  version: ^1.2.0
+- package: github.com/micro/cli
+- package: github.com/micro/go-api
+  version: ^0.3.1
+  subpackages:
+  - router
+- package: github.com/micro/go-bot
+  subpackages:
+  - command
+  - input
+  - input/hipchat
+  - input/slack
+  - proto
+- package: github.com/micro/go-log
+- package: github.com/micro/go-micro
+  version: ^0.8.0
+  subpackages:
+  - broker
+  - client
+  - cmd
+  - errors
+  - metadata
+  - registry
+  - selector
+  - selector/cache
+  - server
+  - server/debug/proto
+- package: github.com/micro/go-run
+  subpackages:
+  - runtime/go
+- package: github.com/pborman/uuid
+  version: ^1.1.0
+- package: github.com/serenize/snaker
+- package: github.com/sipsynergy/go-internal
+  version: ^3.8.0
+  subpackages:
+  - auth
+- package: github.com/sipsynergy/protobuffy
+  version: ^0.0.87
+  subpackages:
+  - proto-go/accounts_organisations
+  - proto-go/accounts_users
+- package: golang.org/x/net
+  subpackages:
+  - context

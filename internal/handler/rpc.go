@@ -6,21 +6,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/micro/go-micro/client"
 	"github.com/micro/go-micro/cmd"
 	"github.com/micro/go-micro/errors"
 	"github.com/micro/micro/internal/helper"
 	"github.com/sipsynergy/go-internal/auth"
-	"github.com/sipsynergy/protobuffy/proto-go/accounts_users"
 	"github.com/sipsynergy/protobuffy/proto-go/accounts_organisations"
+	"github.com/sipsynergy/protobuffy/proto-go/accounts_users"
 )
 
 type rpcRequest struct {
-	Service string
-	Method  string
-	Address string
-	Request interface{}
+	Service        string
+	Method         string
+	Address        string
+	Request        interface{}
 	OrganisationId string
-	UserId string
+	UserId         string
 }
 
 // RPC Handler passes on a JSON or form encoded RPC request to
@@ -110,14 +111,14 @@ func RPC(w http.ResponseWriter, r *http.Request) {
 	// create request/response
 	var response json.RawMessage
 	var err error
-	req := (*cmd.DefaultOptions().Client).NewJsonRequest(service, method, request)
+	req := (*cmd.DefaultOptions().Client).NewRequest(service, method, request, client.WithContentType("application/json"))
 
 	// create context
 	ctx := helper.RequestToContext(r)
 
 	// wrap in auth context
 	ctx = auth.NewContext(ctx, &accounts_users.User{
-		ID: userId,
+		ID:             userId,
 		OrganisationID: organisationId,
 		Organisation: &accounts_organisations.Organisation{
 			ID: organisationId,
@@ -126,7 +127,7 @@ func RPC(w http.ResponseWriter, r *http.Request) {
 
 	// remote call
 	if len(address) > 0 {
-		err = (*cmd.DefaultOptions().Client).CallRemote(ctx, address, req, &response)
+		err = (*cmd.DefaultOptions().Client).Call(ctx, req, &response, client.WithAddress(address))
 	} else {
 		err = (*cmd.DefaultOptions().Client).Call(ctx, req, &response)
 	}
