@@ -14,7 +14,7 @@ import:
   version: ^1.2.0
 - package: github.com/micro/cli
 - package: github.com/micro/go-api
-  version: ^0.3.1
+  version: master
   subpackages:
   - router
 - package: github.com/micro/go-bot
@@ -26,7 +26,7 @@ import:
   - proto
 - package: github.com/micro/go-log
 - package: github.com/micro/go-micro
-  version: ^0.8.0
+  version: master
   subpackages:
   - broker
   - client
@@ -56,3 +56,5 @@ import:
 - package: golang.org/x/net
   subpackages:
   - context
+- package: github.com/chzyer/readline
+  version: ^1.4.0
