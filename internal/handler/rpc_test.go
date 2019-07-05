@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,13 +10,11 @@ import (
 	"testing"
 
 	"github.com/micro/go-micro/client"
-	"github.com/micro/go-micro/cmd"
+	"github.com/micro/go-micro/client/selector"
+	"github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/metadata"
-	rmock "github.com/micro/go-micro/registry/mock"
-	"github.com/micro/go-micro/selector"
+	"github.com/micro/go-micro/registry/memory"
 	"github.com/micro/go-micro/server"
-
-	"golang.org/x/net/context"
 )
 
 type TestHandler struct {
@@ -45,7 +44,7 @@ func (t *TestHandler) Exec(ctx context.Context, req *TestRequest, rsp *TestRespo
 }
 
 func TestRPCHandler(t *testing.T) {
-	r := rmock.NewRegistry()
+	r := memory.NewRegistry()
 
 	(*cmd.DefaultOptions().Client).Init(
 		client.Registry(r),
@@ -65,16 +64,12 @@ func TestRPCHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := server.Register(); err != nil {
-		t.Fatal(err)
-	}
-
 	w := httptest.NewRecorder()
 
 	request := map[string]string{
-		"service": "test",
-		"method":  "TestHandler.Exec",
-		"request": "{}",
+		"service":  "test",
+		"endpoint": "TestHandler.Exec",
+		"request":  "{}",
 	}
 
 	rb, err := json.Marshal(request)
@@ -92,10 +87,6 @@ func TestRPCHandler(t *testing.T) {
 	req.Header.Set("Foo", "Bar")
 
 	RPC(w, req)
-
-	if err := server.Deregister(); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := server.Stop(); err != nil {
 		t.Fatal(err)

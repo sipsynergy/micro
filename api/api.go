@@ -4,18 +4,29 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/micro/cli"
-	"github.com/micro/go-api"
-	"github.com/micro/go-api/router"
-	"github.com/micro/go-log"
 	"github.com/micro/go-micro"
+	ahandler "github.com/micro/go-micro/api/handler"
+	aapi "github.com/micro/go-micro/api/handler/api"
+	"github.com/micro/go-micro/api/handler/event"
+	ahttp "github.com/micro/go-micro/api/handler/http"
+	arpc "github.com/micro/go-micro/api/handler/rpc"
+	"github.com/micro/go-micro/api/handler/web"
+	"github.com/micro/go-micro/api/resolver"
+	"github.com/micro/go-micro/api/resolver/grpc"
+	"github.com/micro/go-micro/api/resolver/host"
+	rrmicro "github.com/micro/go-micro/api/resolver/micro"
+	"github.com/micro/go-micro/api/resolver/path"
+	"github.com/micro/go-micro/api/router"
+	regRouter "github.com/micro/go-micro/api/router/registry"
+	"github.com/micro/go-micro/api/server"
+	httpapi "github.com/micro/go-micro/api/server/http"
+	"github.com/micro/go-micro/util/log"
 	"github.com/micro/micro/internal/handler"
 	"github.com/micro/micro/internal/helper"
-	"github.com/micro/micro/internal/server"
 	"github.com/micro/micro/internal/stats"
 	"github.com/micro/micro/plugin"
 )
@@ -23,38 +34,16 @@ import (
 var (
 	Name         = "go.micro.api"
 	Address      = ":8080"
-	Handler      = string(api.Default)
+	Handler      = "meta"
+	Resolver     = "micro"
 	RPCPath      = "/rpc"
 	APIPath      = "/"
 	ProxyPath    = "/{service:[a-zA-Z0-9]+}"
 	Namespace    = "go.micro.api"
 	HeaderPrefix = "X-Micro-"
-	CORS         = map[string]bool{"*": true}
 )
 
-type srv struct {
-	*mux.Router
-}
-
-func (s *srv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); CORS[origin] {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	} else if len(origin) > 0 && CORS["*"] {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	}
-
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-	if r.Method == "OPTIONS" {
-		return
-	}
-
-	s.Router.ServeHTTP(w, r)
-}
-
-func run(ctx *cli.Context) {
+func run(ctx *cli.Context, srvOpts ...micro.Option) {
 	if len(ctx.GlobalString("server_name")) > 0 {
 		Name = ctx.GlobalString("server_name")
 	}
@@ -67,12 +56,8 @@ func run(ctx *cli.Context) {
 	if len(ctx.String("namespace")) > 0 {
 		Namespace = ctx.String("namespace")
 	}
-	if len(ctx.String("cors")) > 0 {
-		origins := make(map[string]bool)
-		for _, origin := range strings.Split(ctx.String("cors"), ",") {
-			origins[origin] = true
-		}
-		CORS = origins
+	if len(ctx.String("resolver")) > 0 {
+		Resolver = ctx.String("resolver")
 	}
 
 	// Init plugins
@@ -83,7 +68,11 @@ func run(ctx *cli.Context) {
 	// Init API
 	var opts []server.Option
 
-	if ctx.GlobalBool("enable_tls") {
+	if ctx.GlobalBool("enable_acme") {
+		hosts := helper.ACMEHosts(ctx)
+		opts = append(opts, server.EnableACME(true))
+		opts = append(opts, server.ACMEHosts(hosts...))
+	} else if ctx.GlobalBool("enable_tls") {
 		config, err := helper.TLSConfig(ctx)
 		if err != nil {
 			fmt.Println(err.Error())
@@ -95,37 +84,130 @@ func run(ctx *cli.Context) {
 	}
 
 	// create the router
+	var h http.Handler
 	r := mux.NewRouter()
-	s := &srv{r}
-	var h http.Handler = s
+	h = r
 
 	if ctx.GlobalBool("enable_stats") {
 		st := stats.New()
 		r.HandleFunc("/stats", st.StatsHandler)
-		h = st.ServeHTTP(s)
+		h = st.ServeHTTP(r)
 		st.Start()
 		defer st.Stop()
 	}
 
+	srvOpts = append(srvOpts, micro.Name(Name))
+	if i := time.Duration(ctx.GlobalInt("register_ttl")); i > 0 {
+		srvOpts = append(srvOpts, micro.RegisterTTL(i*time.Second))
+	}
+	if i := time.Duration(ctx.GlobalInt("register_interval")); i > 0 {
+		srvOpts = append(srvOpts, micro.RegisterInterval(i*time.Second))
+	}
+
+	// initialise service
+	service := micro.NewService(srvOpts...)
+
+	// register rpc handler
 	log.Logf("Registering RPC Handler at %s", RPCPath)
 	r.HandleFunc(RPCPath, handler.RPC)
+
+	// resolver options
+	ropts := []resolver.Option{
+		resolver.WithNamespace(Namespace),
+		resolver.WithHandler(Handler),
+	}
+
+	// default resolver
+	rr := rrmicro.NewResolver(ropts...)
+
+	switch Resolver {
+	case "host":
+		rr = host.NewResolver(ropts...)
+	case "path":
+		rr = path.NewResolver(ropts...)
+	case "grpc":
+		rr = grpc.NewResolver(ropts...)
+	}
 
 	switch Handler {
 	case "rpc":
 		log.Logf("Registering API RPC Handler at %s", APIPath)
-		rt := router.NewRouter(router.WithNamespace(Namespace), router.WithHandler(api.Rpc))
-		r.PathPrefix(APIPath).Handler(handler.RPCX(rt, nil))
-	case "proxy":
-		log.Logf("Registering API Proxy Handler at %s", ProxyPath)
-		rt := router.NewRouter(router.WithNamespace(Namespace), router.WithHandler(api.Proxy))
-		r.PathPrefix(ProxyPath).Handler(handler.Proxy(rt, nil, false))
+		rt := regRouter.NewRouter(
+			router.WithNamespace(Namespace),
+			router.WithHandler(arpc.Handler),
+			router.WithResolver(rr),
+			router.WithRegistry(service.Options().Registry),
+		)
+		rp := arpc.NewHandler(
+			ahandler.WithNamespace(Namespace),
+			ahandler.WithRouter(rt),
+			ahandler.WithService(service),
+		)
+		r.PathPrefix(APIPath).Handler(rp)
 	case "api":
 		log.Logf("Registering API Request Handler at %s", APIPath)
-		rt := router.NewRouter(router.WithNamespace(Namespace), router.WithHandler(api.Api))
-		r.PathPrefix(APIPath).Handler(handler.API(rt, nil))
+		rt := regRouter.NewRouter(
+			router.WithNamespace(Namespace),
+			router.WithHandler(aapi.Handler),
+			router.WithResolver(rr),
+			router.WithRegistry(service.Options().Registry),
+		)
+		ap := aapi.NewHandler(
+			ahandler.WithNamespace(Namespace),
+			ahandler.WithRouter(rt),
+			ahandler.WithService(service),
+		)
+		r.PathPrefix(APIPath).Handler(ap)
+	case "event":
+		log.Logf("Registering API Event Handler at %s", APIPath)
+		rt := regRouter.NewRouter(
+			router.WithNamespace(Namespace),
+			router.WithHandler(event.Handler),
+			router.WithResolver(rr),
+			router.WithRegistry(service.Options().Registry),
+		)
+		ev := event.NewHandler(
+			ahandler.WithNamespace(Namespace),
+			ahandler.WithRouter(rt),
+			ahandler.WithService(service),
+		)
+		r.PathPrefix(APIPath).Handler(ev)
+	case "http", "proxy":
+		log.Logf("Registering API HTTP Handler at %s", ProxyPath)
+		rt := regRouter.NewRouter(
+			router.WithNamespace(Namespace),
+			router.WithHandler(ahttp.Handler),
+			router.WithResolver(rr),
+			router.WithRegistry(service.Options().Registry),
+		)
+		ht := ahttp.NewHandler(
+			ahandler.WithNamespace(Namespace),
+			ahandler.WithRouter(rt),
+			ahandler.WithService(service),
+		)
+		r.PathPrefix(ProxyPath).Handler(ht)
+	case "web":
+		log.Logf("Registering API Web Handler at %s", APIPath)
+		rt := regRouter.NewRouter(
+			router.WithNamespace(Namespace),
+			router.WithHandler(web.Handler),
+			router.WithResolver(rr),
+			router.WithRegistry(service.Options().Registry),
+		)
+		w := web.NewHandler(
+			ahandler.WithNamespace(Namespace),
+			ahandler.WithRouter(rt),
+			ahandler.WithService(service),
+		)
+		r.PathPrefix(APIPath).Handler(w)
 	default:
 		log.Logf("Registering API Default Handler at %s", APIPath)
-		r.PathPrefix(APIPath).Handler(handler.Meta(Namespace))
+		rt := regRouter.NewRouter(
+			router.WithNamespace(Namespace),
+			router.WithResolver(rr),
+			router.WithRegistry(service.Options().Registry),
+		)
+		r.PathPrefix(APIPath).Handler(handler.Meta(service, rt))
 	}
 
 	// reverse wrap handler
@@ -135,20 +217,9 @@ func run(ctx *cli.Context) {
 	}
 
 	// create the server
-	api := server.NewServer(Address)
+	api := httpapi.NewServer(Address)
 	api.Init(opts...)
 	api.Handle("/", h)
-
-	// Initialise Server
-	service := micro.NewService(
-		micro.Name(Name),
-		micro.RegisterTTL(
-			time.Duration(ctx.GlobalInt("register_ttl"))*time.Second,
-		),
-		micro.RegisterInterval(
-			time.Duration(ctx.GlobalInt("register_interval"))*time.Second,
-		),
-	)
 
 	// Start API
 	if err := api.Start(); err != nil {
@@ -166,11 +237,13 @@ func run(ctx *cli.Context) {
 	}
 }
 
-func Commands() []cli.Command {
+func Commands(options ...micro.Option) []cli.Command {
 	command := cli.Command{
-		Name:   "api",
-		Usage:  "Run the micro API",
-		Action: run,
+		Name:  "api",
+		Usage: "Run the api gateway",
+		Action: func(ctx *cli.Context) {
+			run(ctx, options...)
+		},
 		Flags: []cli.Flag{
 			cli.StringFlag{
 				Name:   "address",
@@ -179,7 +252,7 @@ func Commands() []cli.Command {
 			},
 			cli.StringFlag{
 				Name:   "handler",
-				Usage:  "Specify the request handler to be used for mapping HTTP requests to services; {api, proxy, rpc}",
+				Usage:  "Specify the request handler to be used for mapping HTTP requests to services; {api, event, http, rpc}",
 				EnvVar: "MICRO_API_HANDLER",
 			},
 			cli.StringFlag{
@@ -188,9 +261,9 @@ func Commands() []cli.Command {
 				EnvVar: "MICRO_API_NAMESPACE",
 			},
 			cli.StringFlag{
-				Name:   "cors",
-				Usage:  "Comma separated whitelist of allowed origins for CORS",
-				EnvVar: "MICRO_API_CORS",
+				Name:   "resolver",
+				Usage:  "Set the hostname resolver used by the API {host, path, grpc}",
+				EnvVar: "MICRO_API_RESOLVER",
 			},
 		},
 	}

@@ -4,28 +4,28 @@ var (
 	WrapperAPI = `package client
 
 import (
+	"context"
+
 	"github.com/micro/go-micro"
 	"github.com/micro/go-micro/server"
-	example "github.com/micro/examples/template/srv/proto/example"
-
-	"golang.org/x/net/context"
+	{{.Alias}} "path/to/service/proto/{{.Alias}}"
 )
 
-type exampleKey struct {}
+type {{.Alias}}Key struct {}
 
 // FromContext retrieves the client from the Context
-func ExampleFromContext(ctx context.Context) (example.ExampleClient, bool) {
-	c, ok := ctx.Value(exampleKey{}).(example.ExampleClient)
+func {{title .Alias}}FromContext(ctx context.Context) ({{.Alias}}.{{title .Alias}}Service, bool) {
+	c, ok := ctx.Value({{.Alias}}Key{}).({{.Alias}}.{{title .Alias}}Service)
 	return c, ok
 }
 
-// Client returns a wrapper for the ExampleClient
-func ExampleWrapper(service micro.Service) server.HandlerWrapper {
-	client := example.NewExampleClient("go.micro.srv.template", service.Client())
+// Client returns a wrapper for the {{title .Alias}}Client
+func {{title .Alias}}Wrapper(service micro.Service) server.HandlerWrapper {
+	client := {{.Alias}}.New{{title .Alias}}Service("go.micro.srv.template", service.Client())
 
 	return func(fn server.HandlerFunc) server.HandlerFunc {
 		return func(ctx context.Context, req server.Request, rsp interface{}) error {
-			ctx = context.WithValue(ctx, exampleKey{}, client)
+			ctx = context.WithValue(ctx, {{.Alias}}Key{}, client)
 			return fn(ctx, req, rsp)
 		}
 	}

@@ -5,17 +5,20 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/micro/go-micro/cmd"
+	"github.com/micro/go-micro/client"
+	"github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/errors"
 	"github.com/micro/micro/internal/helper"
 )
 
 type rpcRequest struct {
-	Service string
-	Method  string
-	Address string
-	Request interface{}
+	Service  string
+	Endpoint string
+	Method   string
+	Address  string
+	Request  interface{}
 }
 
 // RPC Handler passes on a JSON or form encoded RPC request to
@@ -33,7 +36,7 @@ func RPC(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(e.Error()))
 	}
 
-	var service, method, address string
+	var service, endpoint, address string
 	var request interface{}
 
 	// response content type
@@ -59,9 +62,12 @@ func RPC(w http.ResponseWriter, r *http.Request) {
 		}
 
 		service = rpcReq.Service
-		method = rpcReq.Method
+		endpoint = rpcReq.Endpoint
 		address = rpcReq.Address
 		request = rpcReq.Request
+		if len(endpoint) == 0 {
+			endpoint = rpcReq.Method
+		}
 
 		// JSON as string
 		if req, ok := rpcReq.Request.(string); ok {
@@ -76,8 +82,11 @@ func RPC(w http.ResponseWriter, r *http.Request) {
 	default:
 		r.ParseForm()
 		service = r.Form.Get("service")
-		method = r.Form.Get("method")
+		endpoint = r.Form.Get("endpoint")
 		address = r.Form.Get("address")
+		if len(endpoint) == 0 {
+			endpoint = r.Form.Get("method")
+		}
 
 		d := json.NewDecoder(strings.NewReader(r.Form.Get("request")))
 		d.UseNumber()
@@ -93,25 +102,34 @@ func RPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(method) == 0 {
-		badRequest("invalid method")
+	if len(endpoint) == 0 {
+		badRequest("invalid endpoint")
 		return
 	}
 
 	// create request/response
 	var response json.RawMessage
 	var err error
-	req := (*cmd.DefaultOptions().Client).NewJsonRequest(service, method, request)
+	req := (*cmd.DefaultOptions().Client).NewRequest(service, endpoint, request, client.WithContentType("application/json"))
 
 	// create context
 	ctx := helper.RequestToContext(r)
 
+	var opts []client.CallOption
+
+	timeout, _ := strconv.Atoi(r.Header.Get("Timeout"))
+	// set timeout
+	if timeout > 0 {
+		opts = append(opts, client.WithRequestTimeout(time.Duration(timeout)*time.Second))
+	}
+
 	// remote call
 	if len(address) > 0 {
-		err = (*cmd.DefaultOptions().Client).CallRemote(ctx, address, req, &response)
-	} else {
-		err = (*cmd.DefaultOptions().Client).Call(ctx, req, &response)
+		opts = append(opts, client.WithAddress(address))
 	}
+
+	// remote call
+	err = (*cmd.DefaultOptions().Client).Call(ctx, req, &response, opts...)
 	if err != nil {
 		ce := errors.Parse(err.Error())
 		switch ce.Code {

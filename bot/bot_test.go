@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/micro/cli"
-	"github.com/micro/go-bot/command"
-	"github.com/micro/go-bot/input"
+	"github.com/micro/go-micro/agent/command"
+	"github.com/micro/go-micro/agent/input"
 
 	"github.com/micro/go-micro"
-	"github.com/micro/go-micro/registry/mock"
+	"github.com/micro/go-micro/registry/memory"
 )
 
 type testInput struct {
@@ -104,7 +104,7 @@ func TestBot(t *testing.T) {
 	}
 
 	service := micro.NewService(
-		micro.Registry(mock.NewRegistry()),
+		micro.Registry(memory.NewRegistry()),
 	)
 
 	bot := newBot(ctx, inputs, commands, service)

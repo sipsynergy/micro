@@ -2,6 +2,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -13,16 +14,17 @@ import (
 	"github.com/micro/cli"
 	"github.com/micro/go-micro"
 
-	"github.com/micro/go-bot/command"
-	"github.com/micro/go-bot/input"
-	_ "github.com/micro/go-bot/input/hipchat"
-	_ "github.com/micro/go-bot/input/slack"
-	"github.com/micro/go-log"
+	"github.com/micro/go-micro/agent/command"
+	"github.com/micro/go-micro/agent/input"
+	"github.com/micro/go-micro/util/log"
 	botc "github.com/micro/micro/internal/command/bot"
 
-	proto "github.com/micro/go-bot/proto"
+	proto "github.com/micro/go-micro/agent/proto"
 
-	"golang.org/x/net/context"
+	// inputs
+	_ "github.com/micro/go-micro/agent/input/discord"
+	_ "github.com/micro/go-micro/agent/input/slack"
+	_ "github.com/micro/go-micro/agent/input/telegram"
 )
 
 type bot struct {
@@ -50,7 +52,7 @@ var (
 		"^list ":                             botc.List,
 		"^get ":                              botc.Get,
 		"^health ":                           botc.Health,
-		"^query ":                            botc.Query,
+		"^call ":                             botc.Call,
 		"^register ":                         botc.Register,
 		"^deregister ":                       botc.Deregister,
 		"^(the )?three laws( of robotics)?$": botc.ThreeLaws,
@@ -434,8 +436,9 @@ func run(ctx *cli.Context) {
 func Commands() []cli.Command {
 	flags := []cli.Flag{
 		cli.StringFlag{
-			Name:  "inputs",
-			Usage: "Inputs to load on startup",
+			Name:   "inputs",
+			Usage:  "Inputs to load on startup",
+			EnvVar: "MICRO_BOT_INPUTS",
 		},
 		cli.StringFlag{
 			Name:   "namespace",
@@ -451,7 +454,7 @@ func Commands() []cli.Command {
 
 	command := cli.Command{
 		Name:   "bot",
-		Usage:  "Run the micro bot",
+		Usage:  "Run the chatops bot",
 		Flags:  flags,
 		Action: run,
 	}

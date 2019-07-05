@@ -6,7 +6,12 @@ var (
 <html>
 	<head>
 		<title>Micro Web</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+		<style>
+		  .navbar-inverse .navbar-brand { color: #F6F5F6; font-weight: bold; }
+		  .navbar-inverse { background-color: #252531; }
+		</style>
 		<style>
 		{{ template "style" . }}
 		</style>
@@ -21,13 +26,13 @@ var (
                   <span class="icon-bar"></span>
                   <span class="icon-bar"></span> 
                 </button>
-                <a class="navbar-brand" href="/">Micro</a>
+                <a class="navbar-brand logo" href="/">Micro</a>
               </div>
               <div class="collapse navbar-collapse" id="navBar">
-	        <ul class="nav navbar-nav navbar-right">
-	          <li><a href="cli">CLI</a></li>
+	        <ul class="nav navbar-nav navbar-right" id="dev">
+	          <li><a href="terminal">Terminal</a></li>
 	          <li><a href="registry">Registry</a></li>
-	          <li><a href="query">Query</a></li>
+	          <li><a href="client">Client</a></li>
 	          {{if .StatsURL}}<li><a href="{{.StatsURL}}" class="navbar-link">Stats</a></li>{{end}}
 	        </ul>
               </div>
@@ -41,13 +46,28 @@ var (
               </div>
             </div>
           </div>
-	  <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+	  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
 	  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
 	  {{template "script" . }}
+	  <script type="text/javascript">
+		function toggle(e) {
+		      var ev = window.event? event : e
+		      if (ev.keyCode == 80 && ev.ctrlKey && ev.shiftKey) {
+			var el = document.getElementById("dev");
+			if (el.style.display == "none") {
+			  el.style.display = "block";
+			} else {
+			  el.style.display = "none";
+			}
+		    }
+		}
+
+		document.onkeydown = toggle;
+	  </script>
 	</body>
 </html>
 {{end}}
-{{ define "style" }}{{end}}
+{{ define "style" }}.search, .service { border-radius: 50px; }{{end}}
 {{ define "head" }}{{end}}
 {{ define "script" }}{{end}}
 {{ define "title" }}{{end}}
@@ -61,7 +81,7 @@ var (
 	{{if .Results.HasWebServices}}
 		<div>
 			{{range .Results.WebServices}}
-			<a href="/{{.}}" data-filter={{.}} class="btn btn-default btn-lg" style="margin: 5px 3px 5px 3px;">{{.}}</a>
+			<a href="/{{.}}" data-filter={{.}} class="btn btn-default btn-lg service" style="margin: 5px 3px 5px 3px;">{{.}}</a>
 			{{end}}
 		</div>
 	{{else}}
@@ -85,8 +105,8 @@ jQuery(function($, undefined) {
 </script>
 {{end}}
 `
-	queryTemplate = `
-{{define "title"}}Query{{end}}
+	callTemplate = `
+{{define "title"}}Call{{end}}
 {{define "style"}}
 	pre {
 		word-wrap: break-word;
@@ -94,10 +114,10 @@ jQuery(function($, undefined) {
 {{end}}
 {{define "content"}}
 <div class="row">
-  <div class="panel panel-default">
+  <div class="panel">
     <div class="panel-body">
 	<div class="col-sm-5">
-		<form id="query-form" onsubmit="return query();">
+		<form id="call-form" onsubmit="return call();">
 			<div class="form-group">
 				<label for="service">Service</label>
 				<ul class="list-group">
@@ -110,17 +130,17 @@ jQuery(function($, undefined) {
 				</ul>
 			</div>
 			<div class="form-group">
-				<label for="method">Method</label>
+				<label for="endpoint">Endpoint</label>
 				<ul class="list-group">
-					<select class="form-control" type=text name=method id=method>
-					<option disabled selected> -- select a method -- </option>
+					<select class="form-control" type=text name=endpoint id=endpoint>
+					<option disabled selected> -- select an endpoint -- </option>
 					</select>
 				</ul>
 			</div>
 			<div class="form-group">
-				<label for="othermethod">Other Method</label>
+				<label for="otherendpoint">Other Endpoint</label>
 				<ul class="list-group">
-					<input class="form-control" type=text name=othermethod id=othermethod disabled placeholder="Method"/>
+					<input class="form-control" type=text name=otherendpoint id=otherendpoint disabled placeholder="Endpoint"/>
 				</ul>
 			</div>
 			<div class="form-group">
@@ -146,42 +166,42 @@ jQuery(function($, undefined) {
 			//Function executes on change of first select option field 
 			$("#service").change(function(){
 				var select = $("#service option:selected").val();
-				$("#othermethod").attr("disabled", true);
-				$('#othermethod').val('');
-				$("#method").empty();
-				$("#method").append("<option disabled selected> -- select a method -- </option>");
+				$("#otherendpoint").attr("disabled", true);
+				$('#otherendpoint').val('');
+				$("#endpoint").empty();
+				$("#endpoint").append("<option disabled selected> -- select an endpoint -- </option>");
 				var s_map = {};
-				{{ range $service, $methods := .Results }}
+				{{ range $service, $endpoints := .Results }}
 				var m_list = [];
-				{{range $index, $element := $methods}}
+				{{range $index, $element := $endpoints}}
 				m_list[{{$index}}] = {{$element.Name}}
 				{{end}}
 				s_map[{{$service}}] = m_list
 				{{ end }}
 				if (select in s_map) {
-				var serviceMethods = s_map[select]
-				var len = serviceMethods.length;
+				var serviceEndpoints = s_map[select]
+				var len = serviceEndpoints.length;
 					for(var i = 0; i < len; i++) {
-						$("#method").append("<option value=\""+serviceMethods[i]+"\">"+serviceMethods[i]+"</option>");	
+						$("#endpoint").append("<option value=\""+serviceEndpoints[i]+"\">"+serviceEndpoints[i]+"</option>");	
 					}
 				}
-				$("#method").append("<option value=\"other\"> - Other</option>");
+				$("#endpoint").append("<option value=\"other\"> - Other</option>");
 			});
 			//Function executes on change of second select option field 
-			$("#method").change(function(){
-				var select = $("#method option:selected").val();
+			$("#endpoint").change(function(){
+				var select = $("#endpoint option:selected").val();
 				if (select == "other") {
-					$("#othermethod").attr("disabled", false);
+					$("#otherendpoint").attr("disabled", false);
 				} else {
-					$("#othermethod").attr("disabled", true);
-					$('#othermethod').val('');
+					$("#otherendpoint").attr("disabled", true);
+					$('#otherendpoint').val('');
 				}
 
 			});
 		});
 	</script>
 	<script>
-		function query() {
+		function call() {
 			var req = new XMLHttpRequest()
 			req.onreadystatechange = function() {
 				if (req.readyState == 4 && req.status == 200) {
@@ -195,13 +215,13 @@ jQuery(function($, undefined) {
 				}
 				console.log(req.responseText);
 			}
-			var method = document.forms[0].elements["method"].value
-			if (!($('#othermethod').prop('disabled'))) {
-				method = document.forms[0].elements["othermethod"].value
+			var endpoint = document.forms[0].elements["endpoint"].value
+			if (!($('#otherendpoint').prop('disabled'))) {
+				endpoint = document.forms[0].elements["otherendpoint"].value
 			}
 			var request = {
 				"service": document.forms[0].elements["service"].value,
-				"method": method,
+				"endpoint": endpoint,
 				"request": JSON.parse(document.forms[0].elements["request"].value)
 			}
 			req.open("POST", "/rpc", true);
@@ -219,7 +239,7 @@ jQuery(function($, undefined) {
 {{define "content"}}
 	<div>
 		{{range .Results}}
-		<a href="registry?service={{.Name}}" data-filter={{.Name}} class="btn btn-default btn-lg" style="margin: 5px 3px 5px 3px;">{{.Name}}</a>
+		<a href="registry?service={{.Name}}" data-filter={{.Name}} class="btn btn-default btn-lg service" style="margin: 5px 3px 5px 3px;">{{.Name}}</a>
 		{{end}}
 	</div>
 {{end}}
@@ -297,14 +317,24 @@ jQuery(function($, undefined) {
 
 	cliTemplate = `
 {{define "head"}}
-<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/jquery.terminal/0.9.3/css/jquery.terminal.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/jquery.terminal/2.0.2/css/jquery.terminal.min.css">
+<style type="text/css"> 
+  .terminal, .terminal .inverted, .terminal-output, .terminal-output>:not(.raw) div {
+    background-color: #fff;
+    color: #333;
+  }
+  .prompt, .cmd, .cmd div, .cmd .inverted, .cmd .cursor.blink, .cmd span, .terminal-output>:not(.raw) span:not(.token) {
+    background-color: #fff;
+    color: #333;
+  }
+</style>
 {{end}}
 {{define "title"}}CLI{{end}}
 {{define "content"}}
 <div id="shell"></div>
 {{end}}
 {{define "script"}}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.terminal/0.9.3/js/jquery.terminal.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.terminal/2.0.2/js/jquery.terminal.min.js"></script>
 <script type="text/javascript">
 jQuery(function($, undefined) {
     $('#shell').terminal(function(command, term) {
@@ -314,7 +344,7 @@ jQuery(function($, undefined) {
         }
 
 	var help = "COMMANDS:\n" +
-	"    query       Query a service method using rpc\n" +
+	"    call       Call a service endpoint using rpc\n" +
 	"    health      Query the health of a service\n" +
 	"    list        List items in registry\n" +
 	"    get         Get item from registry\n";
@@ -428,13 +458,13 @@ jQuery(function($, undefined) {
 			    var node = service.nodes[j];
 
 			    $.ajax({
-				  method: "POST",
+				  endpoint: "POST",
 				  dataType: "json",
 				  contentType: "application/json",
 				  url: "rpc",
 				  data: JSON.stringify({
 					"service": service.name,
-					"method": "Debug.Health",
+					"endpoint": "Debug.Health",
 					"request": {},
 					"address": node.address + ":" + node.port,
 				  }),
@@ -455,9 +485,9 @@ jQuery(function($, undefined) {
 
 
 		break;
-	    case "query":
+	    case "call":
 		if (args.length < 3) {
-		    term.echo("USAGE:\n    query [service] [method] [request]");
+		    term.echo("USAGE:\n    call [service] [endpoint] [request]");
 		    return;
 		}
 
@@ -468,11 +498,11 @@ jQuery(function($, undefined) {
 		}		
 
 		$.ajax({
-		  method: "POST",
+		  endpoint: "POST",
 		  dataType: "json",
 		  contentType: "application/json",
 		  url: "rpc",
-		  data: JSON.stringify({"service": args[1], "method": args[2], "request": request}),
+		  data: JSON.stringify({"service": args[1], "endpoint": args[2], "request": request}),
 		  success: function(data) {
 		    term.echo(JSON.stringify(data, null, 2));
 		  },
@@ -490,7 +520,7 @@ jQuery(function($, undefined) {
         greetings: '',
         name: 'micro_cli',
         height: 400,
-        prompt: 'micro:~$ '});
+        prompt: 'micro> '});
 });
 </script>
 {{end}}

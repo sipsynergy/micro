@@ -1,15 +1,47 @@
 package template
 
 var (
+	MainFNC = `package main
+
+import (
+	"github.com/micro/go-micro/util/log"
+	"github.com/micro/go-micro"
+	"{{.Dir}}/handler"
+	"{{.Dir}}/subscriber"
+)
+
+func main() {
+	// New Service
+	function := micro.NewFunction(
+		micro.Name("{{.FQDN}}"),
+		micro.Version("latest"),
+	)
+
+	// Initialise function
+	function.Init()
+
+	// Register Handler
+	function.Handle(new(handler.{{title .Alias}}))
+
+	// Register Struct as Subscriber
+	function.Subscribe("{{.FQDN}}", new(subscriber.{{title .Alias}}))
+
+	// Run service
+	if err := function.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+`
+
 	MainSRV = `package main
 
 import (
-	"github.com/micro/go-log"
+	"github.com/micro/go-micro/util/log"
 	"github.com/micro/go-micro"
 	"{{.Dir}}/handler"
 	"{{.Dir}}/subscriber"
 
-	example "{{.Dir}}/proto/example"
+	{{.Alias}} "{{.Dir}}/proto/{{.Alias}}"
 )
 
 func main() {
@@ -19,21 +51,17 @@ func main() {
 		micro.Version("latest"),
 	)
 
-	// Register Handler
-	example.RegisterExampleHandler(service.Server(), new(handler.Example))
-
-	// Register Struct as Subscriber
-	service.Server().Subscribe(
-		service.Server().NewSubscriber("topic.{{.FQDN}}", new(subscriber.Example)),
-	)
-
-	// Register Function as Subscriber
-	service.Server().Subscribe(
-		service.Server().NewSubscriber("topic.{{.FQDN}}", subscriber.Handler),
-	)
-
 	// Initialise service
 	service.Init()
+
+	// Register Handler
+	{{.Alias}}.Register{{title .Alias}}Handler(service.Server(), new(handler.{{title .Alias}}))
+
+	// Register Struct as Subscriber
+	micro.RegisterSubscriber("{{.FQDN}}", service.Server(), new(subscriber.{{title .Alias}}))
+
+	// Register Function as Subscriber
+	micro.RegisterSubscriber("{{.FQDN}}", service.Server(), subscriber.Handler)
 
 	// Run service
 	if err := service.Run(); err != nil {
@@ -44,13 +72,13 @@ func main() {
 	MainAPI = `package main
 
 import (
-	"github.com/micro/go-log"
+	"github.com/micro/go-micro/util/log"
 
 	"github.com/micro/go-micro"
 	"{{.Dir}}/handler"
 	"{{.Dir}}/client"
 
-	example "{{.Dir}}/proto/example"
+	{{.Alias}} "{{.Dir}}/proto/{{.Alias}}"
 )
 
 func main() {
@@ -60,14 +88,14 @@ func main() {
 		micro.Version("latest"),
 	)
 
-	// Register Handler
-	example.RegisterExampleHandler(service.Server(), new(handler.Example))
-
 	// Initialise service
 	service.Init(
-		// create wrap for the Example srv client
-		micro.WrapHandler(client.ExampleWrapper(service)),
+		// create wrap for the {{title .Alias}} srv client
+		micro.WrapHandler(client.{{title .Alias}}Wrapper(service)),
 	)
+
+	// Register Handler
+	{{.Alias}}.Register{{title .Alias}}Handler(service.Server(), new(handler.{{title .Alias}}))
 
 	// Run service
 	if err := service.Run(); err != nil {
@@ -78,10 +106,10 @@ func main() {
 	MainWEB = `package main
 
 import (
-        "github.com/micro/go-log"
+        "github.com/micro/go-micro/util/log"
 	"net/http"
 
-        "github.com/micro/go-web"
+        "github.com/micro/go-micro/web"
         "{{.Dir}}/handler"
 )
 
@@ -92,16 +120,16 @@ func main() {
                 web.Version("latest"),
         )
 
-	// register html handler
-	service.Handle("/", http.FileServer(http.Dir("html")))
-
-	// register call handler
-	service.HandleFunc("/example/call", handler.ExampleCall)
-
 	// initialise service
         if err := service.Init(); err != nil {
                 log.Fatal(err)
         }
+
+	// register html handler
+	service.Handle("/", http.FileServer(http.Dir("html")))
+
+	// register call handler
+	service.HandleFunc("/{{.Alias}}/call", handler.{{title .Alias}}Call)
 
 	// run service
         if err := service.Run(); err != nil {

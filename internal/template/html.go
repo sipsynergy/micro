@@ -23,7 +23,7 @@ var (
             <div class="row">
                 <div class="col-md-8">
                     <h1>{{title .Alias}} {{title .Type}}</h1>
-                    <form class="example">
+                    <form class="{{.Alias}}">
                         <div class="form-group">
                             <label>Enter your name</label>
                             <input type=text class="form-control" id="name" name="name" placeholder="John">
@@ -40,15 +40,15 @@ var (
         </div>
 
 
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
 
         <!-- You may want to store this in a separate file -->
         <script type="text/javascript">
-            $(".example").submit(function(e) {
+            $(".{{.Alias}}").submit(function(e) {
                 e.preventDefault();
 
-		var url = window.location.href.replace(/\/$/, "") + "/example/call";
+		var url = window.location.href.replace(/\/$/, "") + "/{{.Alias}}/call";
                 var data = $(this).serializeArray()[0];
                 var name = data.value;
                 if (name.length == 0) {

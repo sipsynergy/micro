@@ -1,4 +1,4 @@
-// Package web is a web dashboard and reverse proxy for micro web apps
+// Package web is a web dashboard
 package web
 
 import (
@@ -14,22 +14,22 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/micro/cli"
-	"github.com/micro/go-log"
 	"github.com/micro/go-micro"
-	"github.com/micro/go-micro/cmd"
+	"github.com/micro/go-micro/api/server"
+	httpapi "github.com/micro/go-micro/api/server/http"
+	"github.com/micro/go-micro/client/selector"
+	"github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/registry"
-	"github.com/micro/go-micro/selector"
-	"github.com/micro/go-micro/selector/cache"
+	"github.com/micro/go-micro/util/log"
 	"github.com/micro/micro/internal/handler"
 	"github.com/micro/micro/internal/helper"
-	"github.com/micro/micro/internal/server"
 	"github.com/micro/micro/internal/stats"
 	"github.com/micro/micro/plugin"
 	"github.com/serenize/snaker"
 )
 
 var (
-	re = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	re = regexp.MustCompile("^[a-zA-Z0-9]+([a-zA-Z0-9-]*[a-zA-Z0-9]*)?$")
 	// Default server name
 	Name = "go.micro.web"
 	// Default address to bind to
@@ -43,35 +43,15 @@ var (
 	// This is stripped from the request path
 	// Allows the web service to define absolute paths
 	BasePathHeader = "X-Micro-Web-Base-Path"
-	// CORS specifies the hosts to allow for CORS
-	CORS     = map[string]bool{"*": true}
-	statsURL string
+	statsURL       string
 )
 
 type srv struct {
 	*mux.Router
 }
 
-func (s *srv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); CORS[origin] {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	} else if len(origin) > 0 && CORS["*"] {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	}
-
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-	if r.Method == "OPTIONS" {
-		return
-	}
-
-	s.Router.ServeHTTP(w, r)
-}
-
 func (s *srv) proxy() http.Handler {
-	sel := cache.NewSelector(
+	sel := selector.NewSelector(
 		selector.Registry((*cmd.DefaultOptions().Registry)),
 	)
 
@@ -250,7 +230,7 @@ func registryHandler(w http.ResponseWriter, r *http.Request) {
 	render(w, r, registryTemplate, services)
 }
 
-func queryHandler(w http.ResponseWriter, r *http.Request) {
+func callHandler(w http.ResponseWriter, r *http.Request) {
 	services, err := (*cmd.DefaultOptions().Registry).ListServices()
 	if err != nil {
 		http.Error(w, "Error occurred:"+err.Error(), 500)
@@ -284,7 +264,7 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render(w, r, queryTemplate, serviceMap)
+	render(w, r, callTemplate, serviceMap)
 }
 
 func render(w http.ResponseWriter, r *http.Request, tmpl string, data interface{}) {
@@ -309,7 +289,7 @@ func render(w http.ResponseWriter, r *http.Request, tmpl string, data interface{
 	}
 }
 
-func run(ctx *cli.Context) {
+func run(ctx *cli.Context, srvOpts ...micro.Option) {
 	if len(ctx.GlobalString("server_name")) > 0 {
 		Name = ctx.GlobalString("server_name")
 	}
@@ -318,13 +298,6 @@ func run(ctx *cli.Context) {
 	}
 	if len(ctx.String("namespace")) > 0 {
 		Namespace = ctx.String("namespace")
-	}
-	if len(ctx.String("cors")) > 0 {
-		origins := make(map[string]bool)
-		for _, origin := range strings.Split(ctx.String("cors"), ",") {
-			origins[origin] = true
-		}
-		CORS = origins
 	}
 
 	// Init plugins
@@ -346,17 +319,21 @@ func run(ctx *cli.Context) {
 		defer st.Stop()
 	}
 
+	s.HandleFunc("/client", callHandler)
 	s.HandleFunc("/registry", registryHandler)
+	s.HandleFunc("/terminal", cliHandler)
 	s.HandleFunc("/rpc", handler.RPC)
-	s.HandleFunc("/cli", cliHandler)
-	s.HandleFunc("/query", queryHandler)
 	s.HandleFunc("/favicon.ico", faviconHandler)
 	s.PathPrefix("/{service:[a-zA-Z0-9]+}").Handler(s.proxy())
 	s.HandleFunc("/", indexHandler)
 
 	var opts []server.Option
 
-	if ctx.GlobalBool("enable_tls") {
+	if ctx.GlobalBool("enable_acme") {
+		hosts := helper.ACMEHosts(ctx)
+		opts = append(opts, server.EnableACME(true))
+		opts = append(opts, server.ACMEHosts(hosts...))
+	} else if ctx.GlobalBool("enable_tls") {
 		config, err := helper.TLSConfig(ctx)
 		if err != nil {
 			fmt.Println(err.Error())
@@ -373,20 +350,21 @@ func run(ctx *cli.Context) {
 		h = plugins[i-1].Handler()(h)
 	}
 
-	srv := server.NewServer(Address)
+	srv := httpapi.NewServer(Address)
 	srv.Init(opts...)
 	srv.Handle("/", h)
 
+	// service opts
+	srvOpts = append(srvOpts, micro.Name(Name))
+	if i := time.Duration(ctx.GlobalInt("register_ttl")); i > 0 {
+		srvOpts = append(srvOpts, micro.RegisterTTL(i*time.Second))
+	}
+	if i := time.Duration(ctx.GlobalInt("register_interval")); i > 0 {
+		srvOpts = append(srvOpts, micro.RegisterInterval(i*time.Second))
+	}
+
 	// Initialise Server
-	service := micro.NewService(
-		micro.Name(Name),
-		micro.RegisterTTL(
-			time.Duration(ctx.GlobalInt("register_ttl"))*time.Second,
-		),
-		micro.RegisterInterval(
-			time.Duration(ctx.GlobalInt("register_interval"))*time.Second,
-		),
-	)
+	service := micro.NewService(srvOpts...)
 
 	if err := srv.Start(); err != nil {
 		log.Fatal(err)
@@ -402,12 +380,12 @@ func run(ctx *cli.Context) {
 	}
 }
 
-func Commands() []cli.Command {
+func Commands(options ...micro.Option) []cli.Command {
 	command := cli.Command{
 		Name:  "web",
-		Usage: "Run the micro web app",
+		Usage: "Run the web dashboard",
 		Action: func(c *cli.Context) {
-			run(c)
+			run(c, options...)
 		},
 		Flags: []cli.Flag{
 			cli.StringFlag{
@@ -419,11 +397,6 @@ func Commands() []cli.Command {
 				Name:   "namespace",
 				Usage:  "Set the namespace used by the Web proxy e.g. com.example.web",
 				EnvVar: "MICRO_WEB_NAMESPACE",
-			},
-			cli.StringFlag{
-				Name:   "cors",
-				Usage:  "Comma separated whitelist of allowed origins for CORS",
-				EnvVar: "MICRO_WEB_CORS",
 			},
 		},
 	}

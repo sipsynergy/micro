@@ -1,11 +1,32 @@
 package template
 
 var (
+	ProtoFNC = `syntax = "proto3";
+
+package {{.FQDN}};
+
+service {{title .Alias}} {
+	rpc Call(Request) returns (Response) {}
+}
+
+message Message {
+	string say = 1;
+}
+
+message Request {
+	string name = 1;
+}
+
+message Response {
+	string msg = 1;
+}
+`
+
 	ProtoSRV = `syntax = "proto3";
 
 package {{.FQDN}};
 
-service Example {
+service {{title .Alias}} {
 	rpc Call(Request) returns (Response) {}
 	rpc Stream(StreamingRequest) returns (stream StreamingResponse) {}
 	rpc PingPong(stream Ping) returns (stream Pong) {}
@@ -44,10 +65,10 @@ message Pong {
 
 package {{.FQDN}};
 
-import "github.com/micro/go-api/proto/api.proto";
+import "github.com/micro/go-micro/api/proto/api.proto";
 
-service Example {
-	rpc Call(api.Request) returns (api.Response) {}
+service {{title .Alias}} {
+	rpc Call(go.api.Request) returns (go.api.Response) {}
 }
 `
 )

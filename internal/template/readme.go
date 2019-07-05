@@ -1,39 +1,123 @@
 package template
 
 var (
-	Readme = `# {{title .Alias}} {{title .Type}}
+	Readme = `# {{title .Alias}} Service
 
-This is the {{title .Alias}} service with fqdn {{.FQDN}}.
+This is the {{title .Alias}} service
+
+Generated with
+
+` + "```" +
+		`
+{{.Command}}
+` + "```" + `
 
 ## Getting Started
 
-### Prerequisites
+- [Configuration](#configuration)
+- [Dependencies](#dependencies)
+- [Usage](#usage)
 
-Install Consul
-[https://www.consul.io/intro/getting-started/install.html](https://www.consul.io/intro/getting-started/install.html)
+## Configuration
 
-Run Consul
+- FQDN: {{.FQDN}}
+- Type: {{.Type}}
+- Alias: {{.Alias}}
+
+## Dependencies
+
+Micro services depend on service discovery. The default is multicast DNS, a zeroconf system.
+
+In the event you need a resilient multi-host setup we recommend consul.
+
 ` + "```" +
 		`
-$ consul agent -dev -advertise=127.0.0.1
+# install consul
+brew install consul
+
+# run consul
+consul agent -dev
+` + "```" + `
+
+## Usage
+
+A Makefile is included for convenience
+
+Build the binary
+
 ` + "```" +
 		`
+make build
+` + "```" + `
 
-### Run Service
+Run the service
+` + "```" +
+		`
+./{{.Alias}}-{{.Type}}
+` + "```" + `
+
+Build a docker image
+` + "```" +
+		`
+make docker
+` + "```"
+
+	ReadmeFNC = `# {{title .Alias}} Function
+
+This is the {{title .Alias}} function
+
+Generated with
 
 ` + "```" +
 		`
-$ go run main.go
+{{.Command}}
+` + "```" + `
+
+## Getting Started
+
+- [Configuration](#configuration)
+- [Dependencies](#dependencies)
+- [Usage](#usage)
+
+## Configuration
+
+- FQDN: {{.FQDN}}
+- Type: {{.Type}}
+- Alias: {{.Alias}}
+
+## Dependencies
+
+Micro functions depend on service discovery. The default is consul.
+
 ` + "```" +
 		`
+# install consul
+brew install consul
 
-### Building a container
+# run consul
+consul agent -dev
+` + "```" + `
 
-If you would like to build the docker container do the following
+## Usage
+
+A Makefile is included for convenience
+
+Build the binary
+
 ` + "```" +
 		`
-CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w' -o {{.Alias}}-{{.Type}} ./main.go
-docker build -t {{.Alias}}-{{.Type}} .
+make build
+` + "```" + `
 
+Run the function once
+` + "```" +
+		`
+./{{.Alias}}-{{.Type}}
+` + "```" + `
+
+Build a docker image
+` + "```" +
+		`
+make docker
 ` + "```"
 )
